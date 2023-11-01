@@ -1,26 +1,200 @@
 import time
 
-PRINT_LVL = 1
+PLVL_ERR = 6
+PLVL_WAR = 7
+PLVL_LOG = 8
+PLVL_INF = 9
+PLVL_MAP = 10
+PLVL_MRT = 11
+PLVL_USR = 12
+PLVL_DBG = 13
+PRINT_LVL = PLVL_USR
 
-def dprint(any, lvl):
+def xprint(*argv, **kwargs):
+    print(*argv, **kwargs)
+
+def dprint(lvl, *argv, **kwargs):
     if (lvl <= PRINT_LVL) and (lvl > 0):
-        print(any)
+        for arg in argv:
+            xprint(arg, end='')
+        if(kwargs):
+            for key, arg in kwargs.items():
+                if(key == 'end') and (arg == ''):
+                    xprint("", end='')
+        else:
+            xprint("")
 
-def getHW(map):
-    h = len(map)
-    # print("height,", h)
-    w = len(map[0])
-    # print("width,", w)
-    return h, w
+class point:
+    IS_WALL = 1
+    IS_PATH = 1 - IS_WALL
+    IS_MARK = 'x'
+
+class dir:
+    UP      = 0
+    DOWN    = 1
+    LEFT    = 2
+    RIGHT   = 3
+    MAX     = 4
+
+class cmap:
+    def __init__(self, matrix):
+        self.h = len(matrix)
+        self.w = len(matrix[0])
+        self.x = self.w
+        self.y = self.h
+        self.matrix = matrix
+        self.mtracker = [ [ 0 for i in range(self.w) ] for j in range(self.h) ]
+    
+    def val(self, x,y):
+        return self.matrix[y][x]
+    
+    def look(self, direction, x, y):
+        if(direction == dir.UP) and (y > 0):
+            return self.matrix[y-1][x]
+        elif(direction == dir.DOWN) and (y < self.h-1):
+            return self.matrix[y+1][x]
+        elif(direction == dir.LEFT) and (x > 0):
+            return self.matrix[y][x-1]
+        elif(direction == dir.RIGHT) and (x < self.w-1):
+            return self.matrix[y][x+1]        
+
+    def printMap(self):
+        for y in range(self.h):
+            for x in range(self.w):
+                dprint(PLVL_MAP, self.matrix[y][x],' ', end='')
+            dprint(PLVL_MAP, '')
+
+    def marknprtRtMap(self, x, y):
+        self.mtracker[y][x] = point.IS_MARK
+        self.printRtMap()
+    
+    def clrTrackerMap(self):
+        for y in range(self.h):
+            for x in range(self.w):
+                self.mtracker[y][x] = 0
+
+    def printRtMap(self):
+        for y in range(self.h):
+            for x in range(self.w):
+                if (self.matrix[y][x] > 0):
+                    val = point.IS_WALL
+                else:
+                    val = self.mtracker[y][x]
+                dprint(PLVL_MRT, val,' ', end='')
+            dprint(PLVL_MRT, '')
+
+class junction:
+    def __init__(self, map_obj):
+        self.mo = map_obj
+        self.x = self.y = self.jcnt = 0
+        self.isPath = [False, False, False, False]
+        self.toDis = [0, 0, 0, 0]
+        self.isJunct = False
+
+    def isJunction(self, x, y):
+        self.isPath = [False, False, False, False]
+        self.toDis = [0, 0, 0, 0]
+        self.EndCord = [[0, 0], [0, 0], [0, 0], [0, 0]]
+        self.isJunct = False
+        self.jcnt = 0
+        self.x = x
+        self.y = y
+        for d in range(dir.MAX):
+            if(self.mo.look(d,x,y) == point.IS_PATH):
+                self.isPath[d] = True
+                self.jcnt += 1
+
+        # if(self.jcnt > 1):
+        if(self.jcnt >= 3):
+            for d in range(dir.MAX):
+                self.toDis[d], self.EndCord[d] = self.get_distance(d, x, y)
+            self.isJunct = True 
+        return self
+    
+    def get_distance(self, d, startx, starty):
+        distance = 0
+        endx = startx
+        endy = starty
+        if(d == dir.UP):
+            for y in range(starty, -1, -1):
+                if(self.mo.look(d, startx, y) == point.IS_PATH):
+                    distance += 1
+                else:
+                    endy = y
+                    break
+        elif(d == dir.DOWN):
+            for y in range(starty, self.mo.h):
+                if(self.mo.look(d, startx, y) == point.IS_PATH):
+                    distance += 1
+                else:
+                    endy = y
+                    break
+        elif(d == dir.LEFT):
+            for x in range(startx, -1, -1):
+                if(self.mo.look(d, x, starty) == point.IS_PATH):
+                    distance += 1
+                else:
+                    endx = x
+                    break
+        elif(d == dir.RIGHT):
+            for x in range(startx, self.mo.w):
+                if(self.mo.look(d, x, starty) == point.IS_PATH):
+                    distance += 1
+                else:
+                    endx = x
+                    break
+        return distance, [endx, endy]
+    
+class vector:
+    
+    def __init__(self, matrix):
+        self.mo = cmap(matrix)
+        self.vecs = []
+        # self.jo = junction(self.mo)
+        self.nodes = [[junction(self.mo) for x in range(self.mo.w)] for y in range(self.mo.h)]
+        self.populate()
+
+    def populate(self):
+        for y in range(0, self.mo.h):
+            for x in range(0 , self.mo.w):
+                if(self.mo.val(x,y) == point.IS_PATH):
+                    thisJunct = self.nodes[y][x].isJunction(x,y) # self.jo.isJunction(x,y)
+                    # self.mo.printRtMap()
+                    if(thisJunct.isJunct):
+                        self.vecs.append(thisJunct)
+                        # dprint(PLVL_INF, "Is Junction at: x:", x,', y:',y)
+                        # self.mo.marknprtRtMap(thisJunct.x,thisJunct.y)
+        return self.vecs
+    
+    def route(self):
+        save_route = []
+        for y in range(0, self.mo.h):
+            for x in range(0 , self.mo.w):
+                if(self.nodes[y][x].isJunct == True):
+                    save_route.append(self.nodes[y][x])
+                    for d in range(dir.MAX):
+                        if(self.nodes[y][x].isPath[d]):
+                            endx = self.nodes[y][x].EndCord[d][0]
+                            endy = self.nodes[y][x].EndCord[d][1]
+                            if(self.nodes[endy][endx].isJunct == True):
+                                x = endx
+                                y = endy
+        return save_route
+    
+    def printNodes(self):
+        for j in self.vecs:
+            dprint(PLVL_INF, j.x, ", ", j.y)
 
 def GetThinWalls(m):
-    h,w = getHW(m)
+    mo = cmap(m)
+    h = mo.h
+    w = mo.w
     thinWalls = []
     # printMap(h,w,m)
     for y in range(0, h):
         for x in range(0 , w):
             if(m[y][x] == 1):
-                if((x != 0) and (y != h-1)) or ((x != w-1) and (y != 0)):
+                if((x != 0) or (y != h-1)) and ((x != w-1) or (y != 0)) and ((x != 0) or (y != 0)) and ((x != w-1) or (y != h-1)):
                     if (x == 0) or (x == w-1):
                         if((m[y+1][x] == 0) and (m[y-1][x] == 0)):
                             thinWalls.append([y,x])
@@ -30,7 +204,7 @@ def GetThinWalls(m):
                     else:
                         if(((m[y][x+1] == 0) and (m[y][x-1] == 0)) or ((m[y+1][x] == 0) and (m[y-1][x] == 0))):
                             thinWalls.append([y,x])
-                        # m[y][x] = "x"
+                    # m[y][x] = "x"
     # print the thin walls location
     # for i in range(len(thinWalls)):
         # m[thinWalls[i][0]][thinWalls[i][1]] = "x"
@@ -38,243 +212,61 @@ def GetThinWalls(m):
     # printMap(h,w,m)
     return thinWalls
 
-def permutation(idx):
-    pmtt = [
-        [0, 1, 2, 3] , [0, 1, 3, 2] , [0, 2, 1, 3] , [0, 2, 3, 1] , [0, 3, 1, 2] , [0, 3, 2, 1] , 
-        [1, 0, 2, 3] , [1, 0, 3, 2] , [1, 2, 0, 3] , [1, 2, 3, 0] , [1, 3, 0, 2] , [1, 3, 2, 0] ,
-        [2, 0, 1, 3] , [2, 0, 3, 1] , [2, 1, 0, 3] , [2, 1, 3, 0] , [2, 3, 0, 1] , [2, 3, 1, 0] ,
-        [3, 0, 1, 2] , [3, 0, 2, 1] , [3, 1, 0, 2] , [3, 1, 2, 0] , [3, 2, 0, 1] , [3, 2, 1, 0]
-    ]
-    # i = permutation.idx
-    return pmtt[idx][0], pmtt[idx][1], pmtt[idx][2], pmtt[idx][3]
 
-def nextstep(x,y,m,med,dt,permute):
-    dU, dL, dD, dR = permutation(permute)
-    DIR = 4
-    ATTR = 4
-    # print(dU, dL, dD, dR)
-    # print(x,y)
-    cmds = [ [ 0 for i in range(ATTR) ] for j in range(DIR) ]
-    if(y < len(m)-1):
-        if(m[y+1][x] == 0):
-            cmds[dD][0] = 'D'
-            cmds[dD][1] = med[y+1][x]
-            cmds[dD][2] = x
-            cmds[dD][3] = y+1
-    if(y > 0):
-        if(m[y-1][x] == 0):
-            cmds[dU][0] = 'U'
-            cmds[dU][1] = med[y-1][x]
-            cmds[dU][2] = x
-            cmds[dU][3] = y-1
-    if(x < len(m[0])-1):
-        if(m[y][x+1] == 0):
-            cmds[dR][0] = 'R'
-            cmds[dR][1] = med[y][x+1]
-            cmds[dR][2] = x+1
-            cmds[dR][3] = y
-    if(x > 0):
-        if(m[y][x-1] == 0):
-            cmds[dL][0] = 'L'
-            cmds[dL][1] = med[y][x-1]
-            cmds[dL][2] = x-1
-            cmds[dL][3] = y
-    
-    # print(cmds)
-    selectedi = 0
-    weight = 100000000 # cmds[0][1]
-    for i in range(0, DIR):
-        # print(cmds[i][0], cmds[i][1])
-        if (cmds[i][0] != 0):
-            # print("checking:", cmds[i][0])
-            if (weight > cmds[i][1]):
-                weight = cmds[i][1]
-                selectedi = i
-                # print("selected:", i)
-    dt += 1
-    x = cmds[selectedi][2]
-    y = cmds[selectedi][3]
-    med[y][x] += 1
-    # print("x,y:",x,y)
-    return x,y,med,dt
-
-def nextshortest(x,y,med,smed,dt,permute):
-    dU, dL, dD, dR = permutation(permute)
-    DIR = 4
-    ATTR = 4
-    print(dU, dL, dD, dR)
-    # print(x,y)
-    cmds = [ [ 0 for i in range(ATTR) ] for j in range(DIR) ]
-    if(y < len(med)-1):
-        if(med[y+1][x] > 0):
-            cmds[dD][0] = 'D'
-            cmds[dD][1] = med[y+1][x]
-            cmds[dD][2] = x
-            cmds[dD][3] = y+1
-    if(y > 0):
-        if(med[y-1][x] > 0):
-            cmds[dU][0] = 'U'
-            cmds[dU][1] = med[y-1][x]
-            cmds[dU][2] = x
-            cmds[dU][3] = y-1
-    if(x < len(med[0])-1):
-        if(med[y][x+1] > 0):
-            cmds[dR][0] = 'R'
-            cmds[dR][1] = med[y][x+1]
-            cmds[dR][2] = x+1
-            cmds[dR][3] = y
-    if(x > 0):
-        if(med[y][x-1] > 0):
-            cmds[dL][0] = 'L'
-            cmds[dL][1] = med[y][x-1]
-            cmds[dL][2] = x-1
-            cmds[dL][3] = y
-    
-    # print(cmds)
-    selectedi = 0
-    weight = 100000000 # cmds[0][1]
-    for i in range(0, DIR):
-        # print(cmds[i][0], cmds[i][1])
-        if (cmds[i][0] != 0):
-            # print("checking:", cmds[i][0])
-            if (weight > cmds[i][1]):
-                weight = cmds[i][1]
-                selectedi = i
-                # print("selected:", i)
-    dt += 1
-    x = cmds[selectedi][2]
-    y = cmds[selectedi][3]
-    smed[y][x] += 1
-    # print("x,y:",x,y)
-    return x,y,med,dt
-
-
-def printRtMap(h, w, m, med):
-    # height, width = getHW(map)
-    for y in range(h):
-        for x in range(w):
-            if (m[y][x] > 0):
-                val = 'x'
-            else:
-                val = med[y][x]
-            print(val,' ', end='')
-        print('')
-
-def printMap(h, w, m):
-    # height, width = getHW(map)
-    for y in range(h):
-        for x in range(w):
-            print(m[y][x],' ', end='')
-        print('')
-
-def PathSearch(map, setPermutation):
-    # Your code here
-    MAX_PERMUTATION = 24
-    height, width = getHW(map)
-    if(setPermutation > 0) and (setPermutation < MAX_PERMUTATION):
-        PermuteCount = setPermutation
-        MAX_PERMUTATION_TARGET = setPermutation+1
-    else:
-        PermuteCount = 0
-        MAX_PERMUTATION_TARGET = MAX_PERMUTATION
-
-    # distanceHistory = [ 0 for i in range(MAX_PERMUTATION) ]
-    distanceHistory = [ [ 0 for i in range(2) ] for j in range(MAX_PERMUTATION) ]
-    while (PermuteCount < MAX_PERMUTATION_TARGET):
-        mapped = [ [ 0 for i in range(width) ] for j in range(height) ]
-        shortestmap = [ [ 0 for i in range(width) ] for j in range(height) ]
-        x = width-1
-        y = height-1
-        dt = 1
-        mapped[x][y] = 1
-        while (x>0) or (y>0):
-            x,y,mapped,dt = nextstep(x,y,map,mapped,dt,PermuteCount)
-            # print(x,y,dt)
-        printRtMap(height, width, map, mapped)
-        donRepeatAgain = 1
-        if (donRepeatAgain == 1):
-            y2 = height-1
-            x2 = width-1
-            dt2 = 1
-            while (x2>0) or (y2>0):
-                x2,y2,mapped,dt2 = nextshortest(x2,y2,mapped,shortestmap,dt2,1)
-                
-                print(x2,y2,dt2)
-                printRtMap(height, width, map, shortestmap)
-                # input("Press Enter to continue...")
-                # time.sleep(0.2)
-        # print(PermuteCount,dt)
-            distanceHistory[PermuteCount][0] = dt2
-            distanceHistory[PermuteCount][1] = PermuteCount
-        else:
-            distanceHistory[PermuteCount][0] = dt
-            distanceHistory[PermuteCount][1] = PermuteCount
-        PermuteCount += 1
-        # input("Press Enter to continue...")
-        # print("original map:")
-        # printMap(height, width, map)
-        # print("walkthrough map:")
-        # printMap(height, width, mapped)
-    return distanceHistory
-    
-def GetShortestDistance(dHistory):
-    # Get least distance direction sets:
-    shortestDistance = dHistory[0][0]
-    shortestPermutation = 0 
-    for i in range(len(dHistory)):
-        if(shortestDistance > dHistory[i][0]):
-            shortestDistance = dHistory[i][0]
-            shortestPermutation = i
-    return dHistory[shortestPermutation]
-    # return shortestPermutation, shortestDistance
 
 def solution(map):
-    thinWalls = GetThinWalls(map)
-    DistanceCandidates = []
-    h,w = getHW(map)
-    # printMap(h,w,map)
-    xmap = [ [ 0 for i in range(w) ] for j in range(h) ]
-    for i in range(len(thinWalls)+1):
-        for y in range(h):
-            for x in range(w):
-                xmap[y][x] = map[y][x]
-        
-        if 0: #print
-            print("\nRemoved all thin walls:")
-            for i in range(len(thinWalls)):
-                xmap[thinWalls[i][0]][thinWalls[i][1]] = "x"
-            printMap(h,w,xmap)
-
-        else: # test run
-            if(i < len(thinWalls)):
-                xmap[thinWalls[i][0]][thinWalls[i][1]] = 0
-                print("Shortest Path for wall removed at:", thinWalls[i], i)
-            else:
-                print("Shortest path for last try with not removing any wall")
-            
-            # printMap(h,w,xmap)
-            PathDistances = PathSearch(xmap, 24)
-            thisWallShortest = GetShortestDistance(PathDistances)
-            DistanceCandidates.append(thisWallShortest)
-            # input("Press Enter to continue...")
-        
-        # print(PathDistances[ShortestIdx], ShortestIdx)
-
-    FinalShortest = GetShortestDistance(DistanceCandidates)
-    print("Final:")
-    print(FinalShortest[0], FinalShortest[1], thinWalls[FinalShortest[1]])
+    # Your code here
+    m = cmap(map)
+    dprint(PLVL_USR, "Test Map:")
+    m.printMap()
+    v = vector(map)
+    # v.mo.printRtMap()
+    dprint(PLVL_USR, "Test Result:")
+    v.mo.printMap()
+    v.printNodes()
+    # dprint(PLVL_USR,"vectors:", v.vecs)
+    # dprint(PLVL_USR,"Final:")
 
 # TODO: junctions vector mapping
 # TODO: vector trees search
-def xsolution(map):
-    map[18][19] = 0
-    print(GetShortestDistance(PathSearch(map, 3)))
 
 # solution([[0, 1, 1, 0], [0, 0, 0, 1], [1, 1, 0, 0], [1, 1, 1, 0]]) 
 # solution([[0, 1, 1, 0], [0, 1, 1, 0], [0, 0, 0, 1], [1, 1, 0, 0], [1, 1, 1, 0v]]) 
 # solution([[0, 0, 0, 0, 0, 0], [1, 1, 1, 1, 1, 0], [0, 0, 0, 0, 0, 0], [0, 1, 1, 1, 1, 1], [0, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0]])
+
+if 0:
+    solution([
+    [0, 0, 0, 0, 0, 0, 0, 1, 0, 0], 
+    [1, 1, 1, 1, 1, 0, 1, 1, 1, 0], 
+    [1, 1, 1, 1, 1, 0, 1, 1, 1, 1], 
+    [0, 0, 0, 0, 0, 0, 1, 0, 1, 0], 
+    [1, 1, 1, 1, 0, 1, 1, 1, 1, 1], 
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+    [0, 1, 1, 1, 0, 1, 1, 1, 1, 1], 
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+    [0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+    [0, 1, 1, 1, 1, 1, 1, 0, 0, 0]
+    ])
+
 if 1:
-    xsolution([
+    solution([
+    [0, 0, 0, 0, 0, 0, 0, 1, 0, 0], 
+    [1, 1, 1, 1, 1, 0, 1, 1, 1, 0], 
+    [1, 1, 1, 1, 1, 0, 1, 1, 1, 1], 
+    [0, 0, 0, 0, 0, 0, 1, 0, 1, 0], 
+    [1, 1, 1, 1, 0, 1, 1, 1, 1, 1], 
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+    [0, 1, 1, 1, 0, 1, 1, 1, 1, 1], 
+    [0, 1, 1, 1, 0, 1, 1, 1, 1, 1], 
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+    [0, 1, 1, 0, 1, 1, 1, 0, 1, 1],
+    [0, 1, 1, 0, 1, 1, 1, 0, 0, 0],
+    [0, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 1, 1, 1, 1, 1, 0, 0, 0]
+    ])
+
+if 0:
+    solution([
     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
     [1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0], 
     [1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0], 
